@@ -40,6 +40,7 @@ from sklearn.metrics import (
 )
 import seaborn as sns
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -430,7 +431,7 @@ def load_model():
     if not MODEL_PATH.exists():
         print("[WARN] Modelo no encontrado. Ejecuta primero el entrenamiento.")
         return False
-    ckpt = torch.load(MODEL_PATH, map_location=DEVICE)
+    ckpt = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=False)
     _classes = ckpt["classes"]
     _model   = build_model(len(_classes))
     _model.load_state_dict(ckpt["model_state"])
@@ -465,10 +466,16 @@ def predict_image(img_tensor: torch.Tensor, top_k: int = 5) -> list:
 # ─────────────────────────────────────────────
 # FASTAPI APP
 # ─────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    load_model()
+    yield
+
 app = FastAPI(
     title="DogBreed Classifier API",
     description="Clasificación de razas de perros con EfficientNetB3 · Stanford Dogs Dataset",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -477,11 +484,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-async def startup():
-    load_model()
 
 
 @app.get("/health")
